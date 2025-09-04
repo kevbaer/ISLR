@@ -1,0 +1,57 @@
+---
+title: "ISLR_Chap_2"
+format: html
+editor: visual
+---
+
+```{r}
+x <- c(1, 4, 3)
+x
+```
+
+```{r}
+y <- c(1, 6, 2)
+length(x)
+length(y)
+x + y
+```
+
+```{r}
+x <- matrix(data = c(1, 2, 3, 4), nrow = 2, ncol = 2)
+x
+```
+
+```{r}
+matrix(data = c(1, 2, 3, 4), nrow = 2, ncol = 2, byrow = TRUE)
+```
+
+```{r}
+sqrt(x)
+```
+
+```{r}
+x <- rnorm(50)
+y <- x + rnorm(50, mean = 50, sd = .1)
+cor(x, y)
+```
+
+```{r}
+set.seed(1303)
+rnorm(50)
+```
+
+```{r}
+set.seed(3)
+y <- rnorm(50)
+mean(y)
+var(y)
+sqrt(var(y))
+sd(y)
+```
+
+```{r}
+x <- seq(1, 10)
+x
+x <- 1:10
+x
+```
