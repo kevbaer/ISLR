@@ -1,0 +1,154 @@
+---
+title: "ISLR_Chap_3"
+format: html
+editor: visual
+---
+
+```{r}
+library(MASS)
+library(tidymodels)
+library(ISLR)
+```
+
+```{r}
+lm_spec <- linear_reg() |> 
+  set_mode("regression") |> 
+  set_engine("lm")
+```
+
+```{r}
+lm_spec
+```
+
+```{r}
+lm_fit <- lm_spec |> 
+  fit(medv ~ lstat, data = Boston)
+
+lm_fit
+```
+
+```{r}
+lm_fit |> 
+  pluck("fit")
+```
+
+```{r}
+lm_fit |> 
+  pluck("fit") |> 
+  summary()
+```
+
+```{r}
+tidy(lm_fit)
+```
+
+```{r}
+glance(lm_fit)
+```
+
+```{r}
+predict(lm_fit, new_data = Boston)
+```
+
+```{r}
+predict(lm_fit, new_data = Boston, type = "conf_int", level = 0.95)
+```
+
+```{r}
+bind_cols(
+  predict(lm_fit, new_data = Boston),
+  Boston
+) |> 
+  select(medv, .pred)
+```
+
+```{r}
+augment(lm_fit, new_data = Boston) |> 
+  select(medv, .pred)
+```
+
+```{r}
+lm_fit2 <- lm_spec |> 
+  fit(medv ~ lstat + age, data = Boston)
+
+lm_fit2
+```
+
+```{r}
+tidy(lm_fit2)
+```
+
+```{r}
+predict(lm_fit2, new_data = Boston)
+```
+
+```{r}
+lm_fit3 <- lm_spec |> 
+  fit(medv ~ ., data = Boston)
+
+lm_fit3
+```
+
+```{r}
+lm_fit4 <- lm_spec |> 
+  fit(medv ~ lstat * age, data = Boston)
+
+lm_fit4
+```
+
+```{r}
+rec_spec_interact <- recipe(medv ~ lstat + age, data = Boston) |> 
+  step_interact(~lstat:age)
+
+lm_wf_interact <- workflow() |> 
+  add_model(lm_spec) |> 
+  add_recipe(rec_spec_interact)
+
+lm_wf_interact |> 
+  fit(Boston)
+```
+
+```{r}
+rec_spec_pow2 <- recipe(medv ~ lstat, data = Boston) |> 
+  step_mutate(lstat = lstat ^ 2)
+
+lm_wf_pow2 <- workflow() |> 
+  add_model(lm_spec) |> 
+  add_recipe(rec_spec_pow2)
+
+lm_wf_pow2 |> fit(Boston)
+```
+
+```{r}
+rec_spec_log <- recipe(medv ~ lstat, data = Boston) |> 
+  step_log(lstat)
+
+lm_wf_log <- workflow() |> 
+  add_model(lm_spec) |> 
+  add_recipe(rec_spec_log)
+
+lm_wf_log |> fit(Boston)
+```
+
+```{r}
+Carseats |> 
+  pull(ShelveLoc) |> 
+  contrasts()
+```
+
+```{r}
+lm_spec |> 
+  fit(Sales ~ . + Income:Advertising + Price:Age, data = Carseats)
+```
+
+```{r}
+rec_spec <- recipe(Sales ~ ., data = Carseats) |> 
+  step_dummy(all_nominal_predictors()) |> 
+  step_interact(~Income:Advertising + Price:Age)
+
+lm_wf <- workflow() |> 
+  add_model(lm_spec) |> 
+  add_recipe(rec_spec)
+
+lm_wf |> fit(Carseats)
+```
