@@ -1,0 +1,397 @@
+---
+title: "ISLR_Chap_4"
+format: html
+editor: visual
+---
+
+```{r}
+library(tidymodels)
+library(ISLR)
+library(ISLR2)
+library(discrim)
+library(poissonreg)
+
+theme_set(theme_bw(base_size = 16, base_family = "Barlow"))
+```
+
+```{r}
+Smarket |> 
+  select(-Direction) |> 
+  cor() |> 
+  corrplot::corrplot(col = colorRampPalette(c("#91CBD765", "#CA225E"))(200), 
+                     tl.col = "black", method = "ellipse")
+```
+
+```{r}
+library(corrr)
+Smarket |> 
+  select(-Direction) |> 
+  correlate() |> 
+  rplot(colours = c("indianred2","black", "skyblue1"))
+```
+
+```{r}
+library(paletteer)
+Smarket |> 
+  select(-Direction) |> 
+  correlate() |> 
+  stretch() |> 
+  ggplot() +
+  aes(x, y, fill = r) +
+  geom_tile() +
+  geom_text(aes(label = as.character(fashion(r)))) +
+  scale_fill_paletteer_c("scico::roma", limits = c(-1, 1), direction = -1)
+```
+
+```{r}
+ggplot(Smarket) +
+  aes(Year, Volume) +
+  geom_jitter(height = 0)
+```
+
+```{r}
+lr_spec <- logistic_reg() |> 
+  set_engine("glm") |> 
+  set_mode("classification")
+
+lr_spec
+```
+
+```{r}
+lr_fit <- lr_spec |> 
+  fit(
+    Direction ~ Lag1 + Lag2 + Lag3 + Lag4 + Lag5 + Volume,
+    data = Smarket
+  )
+
+lr_fit
+```
+
+```{r}
+lr_fit |> 
+  pluck("fit") |> 
+  summary()
+```
+
+```{r}
+tidy(lr_fit)
+```
+
+```{r}
+predict(lr_fit, new_data = Smarket)
+```
+
+```{r}
+predict(lr_fit, new_data = Smarket, type = "prob")
+```
+
+```{r}
+augment(lr_fit, new_data = Smarket) |> 
+  conf_mat(truth = Direction, estimate = .pred_class)
+```
+
+```{r}
+augment(lr_fit, new_data = Smarket) |> 
+  conf_mat(truth = Direction, estimate = .pred_class) |> 
+  autoplot(type = "heatmap")
+```
+
+```{r}
+augment(lr_fit, new_data = Smarket) |> 
+  accuracy(truth = Direction, estimate = .pred_class)
+```
+
+```{r}
+Smarket_train <- Smarket |> filter(Year != 2005)
+Smarket_test <- Smarket |> filter(Year == 2005)
+```
+
+```{r}
+lr_fit2 <- lr_spec |> 
+  fit(
+    Direction ~ Lag1 + Lag2 + Lag3 + Lag4 + Lag5 + Volume,
+    data = Smarket_train
+  )
+
+augment(lr_fit2, new_data = Smarket_test) |> 
+  conf_mat(truth = Direction, estimate = .pred_class)
+```
+
+```{r}
+augment(lr_fit2, new_data = Smarket_test) |> 
+  accuracy(truth = Direction, estimate = .pred_class)
+```
+
+```{r}
+lr_fit3 <- lr_spec |> 
+  fit(
+    Direction ~ Lag1 + Lag2,
+    data = Smarket_train
+  )
+
+augment(lr_fit3, new_data = Smarket_test) |> 
+  conf_mat(truth = Direction, estimate = .pred_class)
+```
+
+```{r}
+augment(lr_fit3, new_data = Smarket_test) |> 
+  accuracy(truth = Direction, estimate = .pred_class)
+```
+
+```{r}
+predict(
+  lr_fit3,
+  new_data = tibble(Lag1 = c(1.2, 1.5), Lag2 = c(1.1, -0.8)),
+  type = "prob"
+)
+```
+
+```{r}
+lda_spec <- discrim_linear() |> 
+  set_mode("classification") |> 
+  set_engine("MASS")
+
+lda_fit <- lda_spec |> 
+  fit(Direction ~ Lag1 + Lag2, data = Smarket_train)
+
+lda_fit
+```
+
+```{r}
+predict(lda_fit, new_data = Smarket_test)
+```
+
+```{r}
+predict(lda_fit, new_data = Smarket_test, type = "prob")
+```
+
+```{r}
+augment(lda_fit, new_data = Smarket_train) |> 
+  conf_mat(truth = Direction, estimate = .pred_class)
+```
+
+```{r}
+augment(lda_fit, new_data = Smarket_test) |> 
+  accuracy(truth = Direction, estimate = .pred_class)
+```
+
+```{r}
+qda_spec <- discrim_quad() |> 
+  set_mode("classification") |> 
+  set_engine("MASS")
+
+qda_fit <- qda_spec |> 
+  fit(
+    Direction ~ Lag1 + Lag2, data = Smarket_train
+  )
+```
+
+```{r}
+augment(qda_fit, new_data = Smarket_test) |> 
+  conf_mat(truth = Direction, estimate = .pred_class)
+```
+
+```{r}
+augment(qda_fit, new_data = Smarket_test) |> 
+  accuracy(truth = Direction, estimate = .pred_class)
+```
+
+```{r}
+nb_spec <- naive_Bayes() |> 
+  set_mode("classification") |> 
+  set_engine("klaR") |> 
+  set_args(usekernel = FALSE)
+
+nb_fit <- nb_spec |> 
+  fit(Direction ~ Lag1 + Lag2, data = Smarket_train)
+```
+
+```{r}
+augment(nb_fit, new_data = Smarket_test) |> 
+  conf_mat(truth = Direction, estimate = .pred_class)
+```
+
+```{r}
+augment(nb_fit, new_data = Smarket_test) |> 
+  accuracy(truth = Direction, estimate = .pred_class)
+```
+
+```{r}
+ggplot(Smarket) + 
+  aes(Lag1, Lag2) + 
+  geom_point(alpha = 0.1, size = 2) +
+  geom_smooth(method = "lm", formula = "y ~ x", se = FALSE) +
+  labs(title = "No apparent correlation between Lag1 and Lag2")
+```
+
+```{r}
+knn_spec <- nearest_neighbor(neighbors = 3) |> 
+  set_mode("classification") |> 
+  set_engine("kknn")
+
+knn_fit <- knn_spec |> 
+  fit(Direction ~ Lag1 + Lag2, data = Smarket_train)
+
+knn_fit
+```
+
+```{r}
+augment(knn_fit, new_data = Smarket_test) |> 
+  conf_mat(truth = Direction, estimate = .pred_class)
+```
+
+```{r}
+augment(knn_fit, new_data = Smarket_test) |> 
+  accuracy(truth = Direction, estimate = .pred_class)
+```
+
+```{r}
+Caravan_test <- Caravan[seq_len(1000), ]
+Caravan_train <- Caravan[-seq_len(1000), ]
+```
+
+```{r}
+rec_spec <- recipe(Purchase ~ ., data = Caravan_train) |> 
+  step_normalize(all_numeric_predictors())
+```
+
+```{r}
+Caravan_wf <- workflow() |> 
+  add_recipe(rec_spec)
+```
+
+```{r}
+knn_spec <- nearest_neighbor() |> 
+  set_mode("classification") |> 
+  set_engine("kknn")
+```
+
+```{r}
+knn1_wf <- Caravan_wf |> 
+  add_model(knn_spec |> set_args(neighbors = 1))
+
+knn3_wf <- Caravan_wf |> 
+  add_model(knn_spec |> set_args(neighbors = 3))
+
+knn5_wf <- Caravan_wf |> 
+  add_model(knn_spec |> set_args(neighbors = 5))
+```
+
+```{r}
+knn1_fit <- fit(knn1_wf, data = Caravan_train)
+knn3_fit <- fit(knn3_wf, data = Caravan_train)
+knn5_fit <- fit(knn5_wf, data = Caravan_train)
+```
+
+```{r}
+augment(knn1_fit, new_data = Caravan_test) |> 
+  conf_mat(truth = Purchase, estimate = .pred_class)
+```
+
+```{r}
+augment(knn3_fit, new_data = Caravan_test) |> 
+  conf_mat(truth = Purchase, estimate = .pred_class)
+```
+
+```{r}
+augment(knn5_fit, new_data = Caravan_test) |> 
+  conf_mat(truth = Purchase, estimate = .pred_class)
+```
+
+```{r}
+pois_spec <- poisson_reg() |> 
+  set_mode("regression") |> 
+  set_engine("glm")
+```
+
+```{r}
+pois_rec_spec <- recipe(
+  bikers ~ mnth + hr + workingday + temp + weathersit,
+  data = Bikeshare
+) |> 
+  step_dummy(all_nominal_predictors())
+```
+
+```{r}
+pois_wf <- workflow() |> 
+  add_recipe(pois_rec_spec) |> 
+  add_model(pois_spec)
+
+pois_fit <- pois_wf |> fit(data = Bikeshare)
+
+augment(pois_fit, new_data = Bikeshare, type.predict = "response") |> 
+  ggplot() + 
+  aes(bikers, .pred) +
+  geom_point(alpha = 0.1) + 
+  geom_abline(slope = 1, linewidth = 1, color = "grey40") + 
+  labs(title = "Predicting the number of bikers per hour using Poission Reg",
+       x = "Actual", y = "Predicted") +
+  theme(plot.title.position = "plot")
+```
+
+```{r}
+library(stringr)
+
+pois_fit_coef_mnths <- pois_fit |> 
+  tidy() |> 
+  filter(str_detect(term, "^mnth")) |> 
+  mutate(
+    term = str_remove(term, "mnth_"),
+    term = forcats::fct_inorder(term)
+  ) 
+
+pois_fit_coef_mnths |> 
+  ggplot() + 
+  aes(term, estimate) + 
+  geom_line(group = 1) + 
+  geom_point(shape = 21, size = 3, stroke = 1.5, fill = "black", color = "white") +
+  labs(title = "Coefficient value from Poission Regression",
+       x = "Month", y = "Coefficient")
+```
+
+```{r}
+pois_fit_coef_hr <- 
+  tidy(pois_fit) |> 
+  filter(str_detect(term, "^hr")) |> 
+  mutate(
+    term =str_remove(term, "hr_X"),
+    term = forcats::fct_inorder(term)
+  )
+
+pois_fit_coef_hr |> 
+  ggplot(aes(term, estimate)) +
+  geom_line(group = 1) +
+  geom_point(shape = 21, size = 3, stroke = 1.5, 
+             fill = "black", color = "white") +
+  labs(title = "Coefficient value from Poission Regression",
+       x = "hours", y = "Coefficient")
+```
+
+```{r}
+models <- list(
+  "logistic regression" = lr_fit3,
+  "LDA" = lda_fit,
+  "QDA" = qda_fit,
+  "KNN" = knn_fit
+)
+
+preds <- imap(models, augment, new_data = Smarket_test, .id = "model") |> 
+  list_rbind(names_to = "model")
+
+preds |> select(model, Direction, .pred_class, .pred_Down, .pred_Up)
+```
+
+```{r}
+multi_metric <- metric_set(accuracy, sensitivity, specificity)
+
+preds |> 
+  group_by(model) |> 
+  multi_metric(truth = Direction, estimate = .pred_class)
+```
+
+```{r}
+preds |> 
+  group_by(model) |> 
+  roc_curve(Direction, .pred_Down) |> 
+  autoplot()
+```
