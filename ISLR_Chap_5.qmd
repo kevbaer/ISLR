@@ -1,0 +1,162 @@
+---
+title: "ISLR_Chap_5"
+format: html
+editor: visual
+---
+
+```{r}
+library(tidymodels)
+library(ISLR)
+
+Auto <- tibble(Auto)
+Portfolio <- tibble(Portfolio)
+
+theme_set(theme_bw(base_family = "Barlow", base_size = 16))
+```
+
+```{r}
+set.seed(1)
+Auto_split <- initial_split(Auto, strata = mpg, prop = 0.5)
+Auto_split
+```
+
+```{r}
+Auto_train <- training(Auto_split)
+Auto_test <- testing(Auto_split)
+Auto_train
+```
+
+```{r}
+Auto_test
+```
+
+```{r}
+lm_spec <- linear_reg() |> 
+  set_mode("regression") |> 
+  set_engine("lm")
+
+lm_fit <- lm_spec |> 
+  fit(mpg ~ horsepower, data = Auto_train)
+```
+
+```{r}
+augment(lm_fit, new_data = Auto_test) |> 
+  rmse(truth = mpg, estimate = .pred)
+```
+
+```{r}
+poly_rec <- recipe(mpg ~ horsepower, data = Auto_train) |> 
+  step_poly(horsepower, degree = 2)
+
+poly_wf <- workflow() |> 
+  add_recipe(poly_rec) |> 
+  add_model(lm_spec)
+
+poly_wf
+```
+
+```{r}
+poly_fit <- fit(poly_wf, data = Auto_train)
+
+augment(poly_fit, new_data = Auto_test) |> 
+  rmse(truth = mpg, estimate = .pred)
+```
+
+```{r}
+poly_tuned_rec <- recipe(mpg ~ horsepower, data = Auto_train) |> 
+  step_poly(horsepower, degree = tune())
+
+poly_tuned_wf <- workflow() |> 
+  add_recipe(poly_tuned_rec) |> 
+  add_model(lm_spec)
+```
+
+```{r}
+Auto_folds <- vfold_cv(Auto_train, v = 10)
+Auto_folds
+```
+
+```{r}
+degree_grid <- grid_regular(degree(range = c(1, 10)), levels = 10)
+
+tune_res <- tune_grid(
+  object = poly_tuned_wf,
+  resamples = Auto_folds,
+  grid = degree_grid
+)
+```
+
+```{r}
+autoplot(tune_res)
+```
+
+```{r}
+collect_metrics(tune_res)
+```
+
+```{r}
+show_best(tune_res, metric = "rmse")
+```
+
+```{r}
+select_by_one_std_err(tune_res, degree, degree, metric = "rmse")
+```
+
+```{r}
+best_degree <- select_by_one_std_err(tune_res, degree, degree, metric = "rmse")
+```
+
+```{r}
+final_wf <- finalize_workflow(poly_wf, best_degree)
+
+final_wf
+```
+
+```{r}
+final_fit <- fit(final_wf, Auto_train)
+
+final_fit
+```
+
+```{r}
+Portfolio_boots <- bootstraps(Portfolio, times = 1000)
+
+Portfolio_boots
+```
+
+```{r}
+alpha.fn <- function(split){
+  data <- analysis(split)
+  X <- data$X
+  Y <- data$Y
+  
+  (var(Y) - cov(X, Y)) / (var(X) + var(Y) - 2 * cov(X, Y))
+}
+```
+
+```{r}
+alpha_res <- Portfolio_boots |> 
+  mutate(alpha = map_dbl(splits, alpha.fn))
+
+alpha_res
+```
+
+```{r}
+Auto_boots <- bootstraps(Auto)
+
+boot.fn <- function(split){
+  lm_fit <- lm_spec |> fit(mpg ~ horsepower, data = analysis(split))
+  tidy(lm_fit)
+}
+```
+
+```{r}
+boot_res <- Auto_boots |> 
+  mutate(models = map(splits, boot.fn))
+
+boot_res |> 
+  unnest(cols = c(models)) |> 
+  summarize(mean = mean(estimate),
+            sd = sd(estimate),
+            .by = term)
+```
