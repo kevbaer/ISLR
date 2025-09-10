@@ -1,0 +1,215 @@
+---
+title: "ISLR_Chap_6"
+format: html
+editor: visual
+---
+
+```{r}
+library(tidymodels)
+library(ISLR)
+
+Hitters <- as_tibble(Hitters) |> 
+  drop_na(Salary)
+```
+
+```{r}
+ridge_spec <- linear_reg(mixture = 0, penalty = 0) |> 
+  set_mode("regression") |> 
+  set_engine("glmnet")
+
+ridge_fit <- fit(ridge_spec, Salary ~ ., data = Hitters)
+
+tidy(ridge_fit)
+```
+
+```{r}
+tidy(ridge_fit, penalty = 11498)
+```
+
+```{r}
+ridge_fit |> 
+  autoplot()
+```
+
+```{r}
+Hitters_split <- initial_split(Hitters, strata = Salary)
+Hitters_train <- training(Hitters_split)
+Hitters_test <- testing(Hitters_split)
+
+Hitters_fold <- vfold_cv(Hitters_train, v = 10)
+```
+
+```{r}
+ridge_recipe <- 
+  recipe(formula = Salary ~ ., data = Hitters_train) |> 
+  step_novel(all_nominal_predictors()) |> 
+  step_dummy(all_nominal_predictors()) |> 
+  step_zv(all_predictors()) |> 
+  step_normalize(all_predictors())
+```
+
+```{r}
+ridge_spec <- 
+  linear_reg(mixture = 0, penalty = tune()) |> 
+  set_mode("regression") |> 
+  set_engine("glmnet")
+
+ridge_workflow <- workflow() |> 
+  add_recipe(ridge_recipe) |> 
+  add_model(ridge_spec)
+```
+
+```{r}
+penalty_grid <- grid_regular(penalty(range = c(-5, 5)), levels = 50)
+penalty_grid
+```
+
+```{r}
+tune_res <- tune_grid(
+  ridge_workflow,
+  resamples = Hitters_fold,
+  grid = penalty_grid
+)
+
+tune_res
+```
+
+```{r}
+autoplot(tune_res)
+```
+
+```{r}
+collect_metrics(tune_res)
+```
+
+```{r}
+best_penalty <- select_best(tune_res, metric = "rsq")
+best_penalty
+```
+
+```{r}
+ridge_final <- finalize_workflow(ridge_workflow, best_penalty)
+ridge_final_fit <- fit(ridge_final, data = Hitters_train)
+
+augment(ridge_final_fit, new_data = Hitters_test) |> 
+  rsq(truth = Salary, estimate = .pred)
+```
+
+```{r}
+lasso_recipe <- 
+  recipe(formula = Salary ~ ., data = Hitters_train) |> 
+  step_novel(all_nominal_predictors()) |> 
+  step_dummy(all_nominal_predictors()) |> 
+  step_zv(all_predictors()) |> 
+  step_normalize(all_predictors())
+
+lasso_spec <- linear_reg(mixture = 1, penalty = tune()) |> 
+  set_mode("regression") |> 
+  set_engine("glmnet")
+
+lasso_workflow <- workflow() |> 
+  add_recipe(lasso_recipe) |> 
+  add_model(lasso_spec)
+```
+
+```{r}
+penalty_grid <- grid_regular(penalty(range = c(-2, 2)), levels = 50)
+```
+
+```{r}
+tune_res <- tune_grid(
+  lasso_workflow, resamples = Hitters_fold, grid = penalty_grid
+)
+autoplot(tune_res)
+```
+
+```{r}
+best_penalty <- select_best(tune_res, metric = "rmse")
+
+lasso_final <- finalize_workflow(lasso_workflow, best_penalty)
+lasso_final_fit <- fit(lasso_final, Hitters_train)
+
+augment(lasso_final_fit, new_data = Hitters_test) |> 
+  rsq(truth = Salary, estimate = .pred)
+```
+
+```{r}
+lm_spec <- linear_reg() |> 
+  set_mode("regression") |> 
+  set_engine("lm")
+
+pca_recipe <- 
+  recipe(formula = Salary ~ ., data = Hitters_train) |> 
+  step_novel(all_nominal_predictors()) |> 
+  step_dummy(all_nominal_predictors()) |> 
+  step_zv(all_predictors()) |> 
+  step_normalize(all_predictors()) |> 
+  step_pca(all_predictors(), threshold = tune())
+
+pca_workflow <- workflow() |> 
+  add_recipe(pca_recipe) |> 
+  add_model(lm_spec)
+```
+
+```{r}
+threshold_grid <- grid_regular(threshold(c(0, 1)), levels = 50)
+threshold_grid
+```
+
+```{r}
+tune_res <- tune_grid(
+  pca_workflow,
+  resamples = Hitters_fold,
+  grid = threshold_grid
+)
+autoplot(tune_res)
+```
+
+```{r}
+best_threshold <- select_best(tune_res, metric = "rmse")
+pca_final <- finalize_workflow(pca_workflow, best_threshold)
+
+pca_final_fit <- fit(pca_final, data = Hitters_train)
+
+augment(pca_final_fit, new_data = Hitters_test) |> 
+  rsq(truth = Salary, estimate = .pred)
+```
+
+```{r}
+lm_spec <- linear_reg() |> 
+  set_mode("regression") |> 
+  set_engine("lm")
+
+pls_recipe <- 
+  recipe(formula = Salary ~ ., data = Hitters_train) |> 
+  step_novel(all_nominal_predictors()) |> 
+  step_dummy(all_nominal_predictors()) |> 
+  step_zv(all_predictors()) |> 
+  step_normalize(all_predictors()) |> 
+  step_pls(all_predictors(), num_comp = tune(), outcome = Salary)
+  
+pls_workflow <- workflow() |> 
+  add_recipe(pls_recipe) |> 
+  add_model(lm_spec)
+```
+
+```{r}
+num_comp_grid <- grid_regular(num_comp(c(1, 20)), levels = 50)
+
+tune_res <- tune_grid(
+  pls_workflow,
+  resamples = Hitters_fold,
+  grid = num_comp_grid
+)
+autoplot(tune_res)
+```
+
+```{r}
+best_num_comp <- select_best(tune_res, metric = "rmse")
+pls_final <- finalize_workflow(pls_workflow, best_num_comp)
+
+pls_final_fit <- fit(pls_final, data = Hitters_train)
+
+augment(pls_final_fit, new_data = Hitters_test) |> 
+  rsq(truth = Salary, estimate = .pred)
+```
