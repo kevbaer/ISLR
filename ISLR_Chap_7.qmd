@@ -1,0 +1,50 @@
+---
+title: "ISLR_Chap_7"
+format: html
+editor: visual
+---
+
+```{r}
+library(tidymodels)
+library(ISLR)
+
+Wage <- as_tibble(Wage)
+```
+
+```{r}
+rec_poly <- recipe(wage ~ age, data = Wage) |> 
+  step_poly(age, degree = 4)
+
+lm_spec <- linear_reg() |> 
+  set_mode("regression") |> 
+  set_engine("lm")
+
+poly_wf <- workflow() |> 
+  add_recipe(rec_poly) |> 
+  add_model(lm_spec)
+
+poly_fit <- fit(poly_wf, data = Wage)
+tidy(poly_fit)
+```
+
+```{r}
+rec_spline <- recipe(wage ~ age, data = Wage) |> 
+  step_bs(age, options = list(knots = 25, 40, 60))
+
+spline_wf <- workflow() |> 
+  add_model(lm_spec) |> 
+  add_recipe(rec_spline)
+
+spline_fit <- fit(spline_wf, data = Wage)
+
+predict(spline_fit, new_data = Wage)
+```
+
+```{r}
+# Not from ISLR Tidymodels Translation
+library(splines)
+library(gam)
+gam1 <- lm(wage ~ ns(year, 4) + ns(age, 5) + education , data = Wage)
+gam.m3 <- gam(wage ~ s(year, 4) + s(age, 5) + education, data = Wage)
+plot(gam.m3, se = TRUE, col = "blue")
+```
