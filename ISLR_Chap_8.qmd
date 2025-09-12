@@ -173,3 +173,237 @@ reg_tree_final_fit  |>
   extract_fit_engine()  |> 
   rpart.plot()
 ```
+
+```{r}
+bagging_spec <- rand_forest(mtry = .cols()) |> 
+  set_engine("randomForest",importance = TRUE ) |> 
+  set_mode("regression")
+
+bagging_wf <- workflow() |> 
+  add_model(bagging_spec) |> 
+  add_formula(medv ~ .)
+
+bagging_fit <- fit(bagging_wf, data = Boston_train)
+
+augment(bagging_fit, new_data = Boston_test) |> 
+  rmse(truth = medv, estimate = .pred)
+```
+
+```{r}
+augment(bagging_fit, new_data = Boston_test) |> 
+  ggplot() +
+  aes(medv, .pred) + 
+  geom_abline() +
+  geom_point(alpha = .5)
+```
+
+```{r}
+library(important)
+j <- importance_perm(bagging_fit, data = Boston_train, type = "original")
+
+autoplot(j, metric = "rmse")
+
+j |> 
+  filter(.metric == "rmse") |> 
+  arrange(importance) |> 
+  ggplot() +
+  aes(importance, forcats::fct_inorder(predictor)) +
+  geom_col() +
+  scale_x_continuous(expand = expansion(c(0.005, 0.06))) +
+  labs(y = "predictor")
+```
+
+```{r}
+rf_spec <- rand_forest(mtry = 6) |> 
+  set_engine("randomForest") |> 
+  set_mode("regression")
+
+
+rf_wf <- workflow() |> 
+  add_model(rf_spec) |> 
+  add_formula(medv ~ .)
+
+rf_fit <- fit(rf_wf, data = Boston_train)
+
+augment(rf_fit, new_data = Boston_test) |> 
+  rmse(truth = medv, estimate = .pred)
+```
+
+```{r}
+j <- importance_perm(rf_fit, data = Boston_train, type = "original")
+
+
+j |> 
+  filter(.metric == "rmse") |> 
+  arrange(importance) |> 
+  ggplot() +
+  aes(importance, forcats::fct_inorder(predictor)) +
+  geom_col() +
+  scale_x_continuous(expand = expansion(c(0.005, 0.06))) +
+  labs(y = "predictor")
+```
+
+```{r}
+boost_spec <- boost_tree(trees = 5000, tree_depth = 4) |> 
+  set_engine("xgboost") |> 
+  set_mode("regression")
+
+boost_wf <- workflow() |> 
+  add_model(boost_spec) |> 
+  add_formula(medv ~ .)
+
+boost_fit <- fit(boost_wf, data = Boston_train)
+
+augment(boost_fit, new_data = Boston_test)  |> 
+  rmse(truth = medv, estimate = .pred)
+```
+
+```{r}
+j <- importance_perm(boost_fit, data = Boston_train, type = "original")
+
+j |> 
+  filter(.metric == "rmse") |> 
+  arrange(importance) |> 
+  ggplot() +
+  aes(importance, forcats::fct_inorder(predictor)) +
+  geom_col() +
+  scale_x_continuous(expand = expansion(c(0.005, 0.06))) +
+  labs(y = "predictor")
+```
+
+```{r}
+Bart_spec <- bart() |> 
+  set_engine("dbarts") |> 
+  set_mode("regression")
+
+Bart_wf <- workflow() |> 
+  add_model(Bart_spec) |> 
+  add_formula(medv ~ .)
+
+Bart_fit <- fit(Bart_wf, Boston_train)
+
+augment(Bart_fit, new_data = Boston_test) |> 
+  rmse(truth = medv, estimate = .pred)
+```
+
+```{r}
+j <- importance_perm(Bart_fit, data = Boston_train, type = "original")
+
+j |> 
+  filter(.metric == "rmse") |> 
+  arrange(importance) |> 
+  ggplot() +
+  aes(importance, forcats::fct_inorder(predictor)) +
+  geom_col() +
+  scale_x_continuous(expand = expansion(c(0.005, 0.06))) +
+  labs(y = "predictor")
+```
+
+```{r}
+set.seed(11042004)
+
+xgb_tun_folds <- vfold_cv(Boston_train, strata = medv, v = 10, repeats = 3)
+
+xgb_spec <-
+  boost_tree(
+    tree_depth = tune(),
+    learn_rate = tune(),
+    loss_reduction = tune(),
+    min_n = tune(),
+    sample_size = tune(),
+    trees = tune()
+  ) |>
+  set_engine("xgboost") |>
+  set_mode("regression")
+
+xgb_wf <- workflow() |> 
+  add_model(xgb_spec) |> 
+  add_formula(medv ~ .)
+```
+
+```{r}
+mirai::daemons(7)
+
+tune_results <- tune_grid(
+  xgb_wf,
+  xgb_tun_folds,
+  grid = 50,
+  metrics = metric_set(rmse)
+)
+
+mirai::daemons(0)
+```
+
+```{r}
+xgb_final <- finalize_workflow(xgb_wf, select_best(tune_results, metric = "rmse"))
+```
+
+```{r}
+xgb_final_fit <- fit(xgb_final, Boston_train)
+
+augment(xgb_final_fit, new_data = Boston_test) |> 
+  rmse(truth = medv, estimate = .pred)
+```
+
+```{r}
+j <- importance_perm(xgb_final_fit, data = Boston_train, type = "original", times = 50)
+
+j |> 
+  filter(.metric == "rmse") |> 
+  arrange(importance) |> 
+  ggplot() +
+  aes(importance, forcats::fct_inorder(predictor)) +
+  geom_col() +
+  scale_x_continuous(expand = expansion(c(0.005, 0.06))) +
+  labs(y = "predictor")
+```
+
+```{r}
+library(DALEXtra)
+library(forcats)
+
+ggplot_imp <- function(...) {
+  {
+    obj <- list(...)
+    metric_name <- attr(obj[[1]], "loss_name")
+    metric_lab <- "Permutation Based Variable Importance"
+
+    full_vip <- bind_rows(obj) %>%
+      filter(variable != "_baseline_")
+
+    perm_vals <- full_vip %>%
+      filter(variable == "_full_model_") %>%
+      group_by(label) %>%
+      summarise(dropout_loss = mean(dropout_loss))
+
+    p <- full_vip %>%
+      filter(variable != "_full_model_") %>%
+      mutate(variable = fct_reorder(variable, dropout_loss)) %>%
+      ggplot(aes(dropout_loss, variable))
+
+
+      p +
+        # geom_boxplot(fill = "#91CBD765", alpha = 0.4)
+        geom_col(fill = "#B80A50") +
+        scale_x_continuous(expand = expansion(mult= (c(0.005, 0.06))))+
+      theme(legend.position = "none") +
+      labs(
+        x = metric_lab,
+        y = NULL, fill = NULL, color = NULL
+      )
+  }
+}
+```
+
+```{r}
+Boston_explainer_xgb <-
+  explain_tidymodels(
+    xgb_final_fit,
+    data = Boston_train |> select(-medv),
+    y = Boston_train$medv,
+    label = "xgb",
+    verbose = FALSE
+  ) |> model_parts()
+
+ggplot_imp(Boston_explainer_xgb)
+```
