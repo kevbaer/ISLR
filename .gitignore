@@ -3,3 +3,5 @@
 .RData
 .Ruserdata
 /mnist
+/cifar-100-binary
+/imdb

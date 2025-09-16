@@ -237,4 +237,379 @@ fit_modellr %>%
   accuracy(truth)
 ```
 
-#### stop at cnn's, pick up tomorrow
+```{r}
+transform <- function(x){
+  transform_to_tensor(x)
+}
+
+train_ds <- cifar100_dataset(
+  root = "./",
+  train = TRUE,
+  download = TRUE,
+  transform = transform
+)
+
+test_ds <- cifar100_dataset(
+  root = "./",
+  train = FALSE,
+  transform = transform
+)
+```
+
+```{r}
+conv_block <- nn_module(
+  initialize = function(in_channels, out_channels){
+    self$conv <- nn_conv2d(
+      in_channels = in_channels,
+      out_channels = out_channels,
+      kernel_size = c(3,3),
+      padding = "same"
+    )
+    self$relu <- nn_relu()
+    self$pool <- nn_max_pool2d(kernel_size = c(2,2))
+  },
+  forward = function(x){
+    x |> 
+      self$conv() |> 
+      self$relu() |> 
+      self$pool()
+  }
+)
+
+model <- nn_module(
+  initialize = function(){
+    self$conv <- nn_sequential(
+      conv_block(3, 32),
+      conv_block(32, 64),
+      conv_block(64, 128),
+      conv_block(128, 256)
+    )
+    self$output <- nn_sequential(
+      nn_dropout(0.5),
+      nn_linear(2*2*256, 512),
+      nn_relu(),
+      nn_linear(512, 100)
+    )
+  },
+  forward = function(x){
+    x |> 
+      self$conv() |> 
+      torch_flatten(start_dim = 2) |> 
+      self$output()
+  }
+)
+
+model()
+```
+
+```{r}
+fitted <- model |> 
+  setup(
+    loss = nn_cross_entropy_loss(),
+    optimizer = optim_rmsprop,
+    metrics = list(luz_metric_accuracy())
+  ) |> 
+  set_opt_hparams(lr = 0.001) |> 
+  fit(
+    train_ds,
+    epochs = 10,
+    valid_data = 0.2,
+    dataloader_options = list(batch_size = 128)
+  )
+
+print(fitted)
+```
+
+```{r}
+evaluate(fitted, test_ds)
+```
+
+```{r}
+set.seed(1)
+max_features <- 10000
+imdb_train <- imdb_dataset(
+  root = ".",
+  download = TRUE,
+  split = "test",
+  num_words = max_features
+)
+imdb_test <- imdb_dataset(
+  root = ".", 
+  download = TRUE,
+  split="test",
+  num_words = max_features
+)
+```
+
+```{r}
+word_index <- imdb_train$vocabulary
+
+decode_review <- function(text, word_index){
+  word <- names(word_index)
+  idx <- unlist(word_index, use.names = FALSE)
+  word <- c("<PAD>", "<START>", "<UNK>", word)
+  words <- word[text]
+  paste(words, collapse = " ")
+}
+decode_review(imdb_train[1]$x[1:12], word_index)
+```
+
+```{r}
+library(Matrix)
+one_hot <- function(sequences, dimension){
+  seqlen <- sapply(sequences, length)
+  n <- length(seqlen)
+  rowind <- rep(1:n, seqlen)
+  colind <- unlist(sequences)
+  sparseMatrix(i = rowind, j = colind, dims = c(n, dimension))
+}
+```
+
+```{r}
+train <- seq_along(imdb_train) |> 
+  lapply(function(i) imdb_train[i]) |> 
+  transpose()
+
+test <- seq_along(imdb_test) |> 
+  lapply(function(i) imdb_test[i]) |> 
+  transpose()
+
+x_train_1h <- one_hot(train$x, 10000 + 3)
+x_test_1h <- one_hot(test$x, 10000 + 3)
+```
+
+```{r}
+set.seed(3)
+ival <- sample(seq(along = train$y), 2000)
+itrain <- seq_along(train$y)[-ival]
+```
+
+```{r}
+model <- nn_module(
+  initialize = function(input_size = 10000 + 3) {
+    self$dense1 <- nn_linear(input_size, 16)
+    self$relu <- nn_relu()
+    self$dense2 <- nn_linear(16, 16)
+    self$output <- nn_linear(16, 1)
+  },
+  forward = function(x) {
+    x %>% 
+      self$dense1() %>% 
+      self$relu() %>% 
+      self$dense2() %>% 
+      self$relu() %>% 
+      self$output() %>% 
+      torch_flatten(start_dim = 1)
+  }
+)
+model <- model %>% 
+  setup(
+    loss = nn_bce_with_logits_loss(),
+    optimizer = optim_rmsprop,
+    metrics = list(luz_metric_binary_accuracy_with_logits())
+  ) %>% 
+  set_opt_hparams(lr = 0.001)
+
+fitted <- model %>% 
+  fit(
+    # we transform the training and validation data into torch tensors
+    list(
+      torch_tensor(as.matrix(x_train_1h[itrain,]), dtype = torch_float()), 
+      torch_tensor(unlist(train$y[itrain]))
+    ),
+    valid_data = list(
+      torch_tensor(as.matrix(x_train_1h[ival, ]), dtype = torch_float()), 
+      torch_tensor(unlist(train$y[ival]))
+    ),
+    dataloader_options = list(batch_size = 512),
+    epochs = 10
+  )
+
+plot(fitted) 
+```
+
+```{r}
+wc <- sapply(seq_along(imdb_train), function(i) length(imdb_train[i]$x))
+median(wc)
+```
+
+```{r}
+maxlen <- 500
+num_words <- 10000
+imdb_train <- imdb_dataset(root = ".", split = "train", num_words = num_words,
+                           maxlen = maxlen)
+imdb_test <- imdb_dataset(root = ".", split = "test", num_words = num_words,
+                           maxlen = maxlen)
+
+vocab <- c(rep(NA, imdb_train$index_from - 1), imdb_train$get_vocabulary())
+tail(names(vocab)[imdb_train[1]$x])
+```
+
+```{r}
+model <- nn_module(
+  initialize = function() {
+    self$embedding <- nn_embedding(10000 + 3, 32)
+    self$lstm <- nn_lstm(input_size = 32, hidden_size = 32, batch_first = TRUE)
+    self$dense <- nn_linear(32, 1)
+  },
+  forward = function(x) {
+    c(output, c(hn, cn)) %<-% (x %>% 
+      self$embedding() %>% 
+      self$lstm())
+    output[,-1,] %>%  # get the last output
+      self$dense() %>% 
+      torch_flatten(start_dim = 1)
+  }
+)
+
+model <- model %>% 
+  setup(
+    loss = nn_bce_with_logits_loss(),
+    optimizer = optim_rmsprop,
+    metrics = list(luz_metric_binary_accuracy_with_logits())
+  ) %>% 
+  set_opt_hparams(lr = 0.001)
+
+fitted <- model %>% fit(
+  imdb_train, 
+  epochs = 10,
+  dataloader_options = list(batch_size = 128),
+  valid_data = imdb_test
+)
+plot(fitted)
+```
+
+```{r}
+predy <- torch_sigmoid(predict(fitted, imdb_test)) > 0.5
+evaluate(fitted, imdb_test, dataloader_options = list(batch_size = 512))
+```
+
+```{r}
+library(ISLR2)
+xdata <- data.matrix(
+ NYSE[, c("DJ_return", "log_volume","log_volatility")]
+ )
+istrain <- NYSE[, "train"]
+xdata <- scale(xdata)
+
+lagm <- function(x, k = 1) {
+   n <- nrow(x)
+   pad <- matrix(NA, k, ncol(x))
+   rbind(pad, x[1:(n - k), ])
+}
+
+arframe <- data.frame(log_volume = xdata[, "log_volume"],
+   L1 = lagm(xdata, 1), L2 = lagm(xdata, 2),
+   L3 = lagm(xdata, 3), L4 = lagm(xdata, 4),
+   L5 = lagm(xdata, 5)
+ )
+
+arframe <- arframe[-(1:5), ]
+istrain <- istrain[-(1:5)]
+
+arfit <- lm(log_volume ~ ., data = arframe[istrain, ])
+arpred <- predict(arfit, arframe[!istrain, ])
+V0 <- var(arframe[!istrain, "log_volume"])
+1 - mean((arpred - arframe[!istrain, "log_volume"])^2) / V0
+
+arframed <-
+    data.frame(day = NYSE[-(1:5), "day_of_week"], arframe)
+arfitd <- lm(log_volume ~ ., data = arframed[istrain, ])
+arpredd <- predict(arfitd, arframed[!istrain, ])
+1 - mean((arpredd - arframe[!istrain, "log_volume"])^2) / V0
+
+n <- nrow(arframe)
+xrnn <- data.matrix(arframe[, -1])
+xrnn <- array(xrnn, c(n, 3, 5))
+xrnn <- xrnn[,, 5:1]
+xrnn <- aperm(xrnn, c(1, 3, 2))
+dim(xrnn)
+
+model <- nn_module(
+  initialize = function() {
+    self$rnn <- nn_rnn(3, 12, batch_first = TRUE)
+    self$dense <- nn_linear(12, 1)
+    self$dropout <- nn_dropout(0.2)
+  },
+  forward = function(x) {
+    c(output, ...) %<-% (x %>% 
+      self$rnn())
+    output[,-1,] %>% 
+      self$dropout() %>% 
+      self$dense() %>% 
+      torch_flatten(start_dim = 1)
+  }
+)
+
+model <- model %>% 
+  setup(
+    optimizer = optim_rmsprop,
+    loss = nn_mse_loss()
+  ) %>% 
+  set_opt_hparams(lr = 0.001)
+
+fitted <- model %>% fit(
+    list(xrnn[istrain,, ], arframe[istrain, "log_volume"]),
+    epochs = 30, # = 200,
+    dataloader_options = list(batch_size = 64),
+    valid_data =
+      list(xrnn[!istrain,, ], arframe[!istrain, "log_volume"])
+  )
+kpred <- as.numeric(predict(fitted, xrnn[!istrain,, ]))
+1 - mean((kpred - arframe[!istrain, "log_volume"])^2) / V0
+```
+
+```{r}
+
+model <- nn_module(
+  initialize = function() {
+    self$dense <- nn_linear(15, 1)
+  },
+  forward = function(x) {
+    x %>% 
+      torch_flatten(start_dim = 2) %>% 
+      self$dense()
+  }
+)
+
+x <- model.matrix(log_volume ~ . - 1, data = arframed)
+colnames(x)
+
+
+arnnd <- nn_module(
+  initialize = function() {
+    self$dense <- nn_linear(20, 32)
+    self$dropout <- nn_dropout(0.5)
+    self$activation <- nn_relu()
+    self$output <- nn_linear(32, 1)
+    
+  },
+  forward = function(x) {
+    x %>% 
+      torch_flatten(start_dim = 2) %>% 
+      self$dense() %>% 
+      self$activation() %>% 
+      self$dropout() %>% 
+      self$output() %>% 
+      torch_flatten(start_dim = 1)
+  }
+)
+arnnd <- arnnd %>% 
+  setup(
+    optimizer = optim_rmsprop,
+    loss = nn_mse_loss()
+  ) %>% 
+  set_opt_hparams(lr = 0.001)
+
+fitted <- arnnd %>% fit(
+    list(x[istrain,], arframe[istrain, "log_volume"]),
+    epochs = 30, 
+    dataloader_options = list(batch_size = 64),
+    valid_data =
+      list(x[!istrain,], arframe[!istrain, "log_volume"])
+  )
+plot(fitted)
+
+npred <- as.numeric(predict(fitted, x[!istrain, ]))
+1 - mean((arframe[!istrain, "log_volume"] - npred)^2) / V0
+```
