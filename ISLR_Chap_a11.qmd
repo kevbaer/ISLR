@@ -1,0 +1,68 @@
+---
+title: "ISLR_Chap_a11"
+format: html
+editor: visual
+---
+
+```{r}
+library(ISLR2)
+
+names(BrainCancer)
+```
+
+```{r}
+library(survival)
+
+fit.surv <- survfit(Surv(time, status) ~ 1, data = BrainCancer)
+
+plot(fit.surv, xlab = "Months", ylab = "Estimated Probability of Success")
+```
+
+```{r}
+fit.sex <- survfit(Surv(time, status) ~ sex, data = BrainCancer)
+
+plot(fit.sex, xlab = "Months", ylab = "Estimated Probability of Survival", col = c(2,4))
+legend("bottomleft", levels(BrainCancer$sex), col = c(2,4), lty = 1)
+```
+
+```{r}
+logrank.test <- survdiff(Surv(time, status) ~ sex, data = BrainCancer)
+logrank.test
+```
+
+```{r}
+fit.cox <- coxph(Surv(time, status) ~ sex, data = BrainCancer)
+
+summary(fit.cox)
+```
+
+```{r}
+fit.all <- coxph(
+  Surv(time, status) ~ sex + diagnosis + loc + ki + gtv + stereo, data = BrainCancer
+)
+fit.all
+```
+
+```{r}
+fit.posres <- survfit(Surv(time, status) ~ posres, data = Publication)
+
+plot(fit.posres, xlab = "Months", ylab = "Probability of Not being Published", col = 3:4)
+
+legend("topright", c("Negative Result", "Positive Result"), col = 3:4, lty = 1)
+```
+
+```{r}
+fit.pub <- coxph(Surv(time, status) ~ posres, data = Publication)
+fit.pub
+```
+
+```{r}
+logrank.test <- survdiff(Surv(time, status) ~ posres, data = Publication)
+logrank.test
+```
+
+```{r}
+fit.pub2 <- coxph(Surv(time, status) ~ . - mech, data = Publication)
+
+fit.pub2
+```
